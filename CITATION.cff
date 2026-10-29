@@ -1,0 +1,97 @@
+cff-version: "1.2.0"
+message: If you use this app, please cite it and the works it builds on, listed under references.
+type: software
+title: ANTs registration to MNI152
+abstract: Registers each T1-weighted image to the MNI152NLin2009cAsym template with ANTs and carries an
+  optional label map into template space. Writes the warped images, the transforms and a per-subject registration
+  check.
+authors:
+- name: Pennsieve (University of Pennsylvania)
+repository-code: https://github.com/pennsieve-apps/processor-ants-mni
+license: Apache-2.0
+keywords:
+- neuroimaging
+- mri
+- nifti
+- ants
+- registration
+- mni
+references:
+- type: article
+  title: The ANTsX ecosystem for quantitative biological and medical imaging
+  authors:
+  - family-names: Tustison
+    given-names: Nicholas J.
+  - family-names: Cook
+    given-names: Philip A.
+  - family-names: Holbrook
+    given-names: Andrew J.
+  - family-names: Johnson
+    given-names: Hans J.
+  - family-names: Muschelli
+    given-names: John
+  - family-names: Devenyi
+    given-names: Gabriel A.
+  - family-names: Duda
+    given-names: Jeffrey T.
+  - family-names: Das
+    given-names: Sandhitsu R.
+  - family-names: Cullen
+    given-names: Nicholas C.
+  - family-names: Gillen
+    given-names: Daniel L.
+  - family-names: Yassa
+    given-names: Michael A.
+  - family-names: Stone
+    given-names: James R.
+  - family-names: Gee
+    given-names: James C.
+  - family-names: Avants
+    given-names: Brian B.
+  year: 2021
+  journal: Scientific Reports
+  volume: 11
+  issue: '1'
+  start: '9068'
+  doi: 10.1038/s41598-021-87564-6
+- type: article
+  title: 'Symmetric diffeomorphic image registration with cross-correlation: Evaluating automated labeling
+    of elderly and neurodegenerative brain'
+  authors:
+  - family-names: AVANTS
+    given-names: B
+  - family-names: EPSTEIN
+    given-names: C
+  - family-names: GROSSMAN
+    given-names: M
+  - family-names: GEE
+    given-names: J
+  year: 2008
+  journal: Medical Image Analysis
+  volume: 12
+  issue: '1'
+  start: '26'
+  end: '41'
+  doi: 10.1016/j.media.2007.06.004
+- type: article
+  title: Unbiased average age-appropriate atlases for pediatric studies
+  authors:
+  - family-names: Fonov
+    given-names: Vladimir
+  - family-names: Evans
+    given-names: Alan C.
+  - family-names: Botteron
+    given-names: Kelly
+  - family-names: Almli
+    given-names: C. Robert
+  - family-names: McKinstry
+    given-names: Robert C.
+  - family-names: Collins
+    given-names: D. Louis
+  year: 2011
+  journal: NeuroImage
+  volume: 54
+  issue: '1'
+  start: '313'
+  end: '327'
+  doi: 10.1016/j.neuroimage.2010.07.033
