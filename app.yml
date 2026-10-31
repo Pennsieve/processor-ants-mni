@@ -61,3 +61,14 @@ outputs:
       deformable types _1Warp.nii.gz and _1InverseWarp.nii.gz; <sub>_registration.json
       with the transform type, the Dice overlap with the template brain mask and the command.
     mediaTypes: [application/octet-stream, application/x-nifti-gz, application/json]
+
+# How a release is tested before it is made public: the inputs a review run uses.
+# See app-deploy-service docs/app-manifest-review.md.
+review:
+  version: 1
+  inputs:
+    image:
+      dataset:
+        doi: 10.18112/openneuro.ds000117.v2.0.0
+        files:
+          - sub-01/ses-mri/anat/sub-01_ses-mri_T1w.nii.gz
