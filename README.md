@@ -5,7 +5,7 @@ from [TemplateFlow](https://www.templateflow.org/)) with
 [ANTs](https://github.com/ANTsX/ANTs) 2.6.5 `antsRegistrationSyNQuick.sh`, and carries an
 optional label map along into template space. Step 4 of the Clinical Brain MRI workflow: it takes
 the skull-stripped, bias-corrected T1w from the N4 step. The template and its brain mask are baked
-into the image under `/opt/templates/`, so the container needs no network. On Pennsieve the `template` input brings the same files from Pennsieve's reference catalog (an official, versioned copy recorded on each run); elsewhere, put `tpl-MNI152NLin2009cAsym_res-01_desc-brain_T1w.nii.gz` and `..._desc-brain_mask.nii.gz` in `INPUT_DIR/template/`, or leave it out to use the built-in copy.
+into the image under `/opt/templates/`, so the container needs no network. The `template` input (Ports, below) can bring the same files instead; `provenance.json` records which copy was used and its sha256.
 
 ## Ports
 
@@ -13,6 +13,7 @@ into the image under `/opt/templates/`, so the container needs no network. On Pe
 |---|---|---|---|
 | `image` | input, required | `<sub>[_<entities>]_T1w.nii.gz` | one per subject, e.g. `sub-01_desc-n4_T1w.nii.gz`; found in `INPUT_DIR/image/`, else anywhere under `INPUT_DIR` by the `T1w` suffix |
 | `labels` | input, optional | `<sub>[_<entities>]_dseg.nii.gz` | matched by subject label (the part before the first `_`); resampled with `GenericLabel` |
+| `template` | input, optional | `tpl-MNI152NLin2009cAsym_res-01_desc-brain_T1w.nii.gz`, `tpl-MNI152NLin2009cAsym_res-01_desc-brain_mask.nii.gz` | Pennsieve's reference catalog fills it (a sha256-checked, versioned copy); without it the built-in copy is used. If it's there it must hold both files. Never searched for images |
 | `warped` | output | `warped/<sub>_space-MNI152NLin2009cAsym_T1w.nii.gz`, `warped/<sub>_space-MNI152NLin2009cAsym_dseg.nii.gz` (with labels), `warped/provenance.json` | 193 x 229 x 193 voxels, 1 mm |
 | `transforms` | output | `transforms/<sub>_from-T1w_to-MNI152NLin2009cAsym_0GenericAffine.mat`, `..._1Warp.nii.gz`, `..._1InverseWarp.nii.gz` (deformable types only), `transforms/<sub>_registration.json` | |
 

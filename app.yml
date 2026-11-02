@@ -51,10 +51,10 @@ inputs:
     required: false
   - name: template
     description: >-
-      The MNI152NLin2009cAsym template (1 mm, brain-extracted T1w and brain mask, TemplateFlow's
-      files and names). On Pennsieve it comes from the reference catalog; elsewhere, put
-      tpl-MNI152NLin2009cAsym_res-01_desc-brain_T1w.nii.gz and _desc-brain_mask.nii.gz in
-      INPUT_DIR/template. Without it the copy built into the image is used.
+      The MNI152NLin2009cAsym template, 1 mm: tpl-MNI152NLin2009cAsym_res-01_desc-brain_T1w.nii.gz
+      and tpl-MNI152NLin2009cAsym_res-01_desc-brain_mask.nii.gz, TemplateFlow's files. On Pennsieve
+      it comes from the reference catalog; elsewhere, put both in INPUT_DIR/template. Without it
+      the copy built into the image (the same files) is used; given, it must hold both.
     placement: subfolder
     required: false
     reference:

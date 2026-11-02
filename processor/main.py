@@ -15,6 +15,7 @@ Outputs:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,25 +42,50 @@ OUTPUTS = ["warped", "transforms"]
 SPACE = "MNI152NLin2009cAsym"
 TEMPLATE_NAME = f"tpl-{SPACE}_res-01_desc-brain_T1w.nii.gz"
 TEMPLATE_MASK_NAME = f"tpl-{SPACE}_res-01_desc-brain_mask.nii.gz"
-# The copy baked into the image; a run's template input replaces it.
-TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "/opt/templates"))
-TEMPLATE = TEMPLATE_DIR / TEMPLATE_NAME
-TEMPLATE_MASK = TEMPLATE_DIR / TEMPLATE_MASK_NAME
-TEMPLATE_SOURCE = "https://templateflow.s3.amazonaws.com/tpl-MNI152NLin2009cAsym/ (built into the image)"
+# The template input's folder below INPUT_DIR (app.yml inputs[].name).
+TEMPLATE_INPUT = "template"
+# The copy baked into the image (sha256-pinned in the Dockerfile).
+BUILT_IN_TEMPLATES = Path(os.environ.get("TEMPLATE_DIR", "/opt/templates"))
 
 
-def use_template_input(input_dir: Path) -> None:
-    """Use the template input (INPUT_DIR/template/, from Pennsieve's reference
-    catalog or put there by hand) when it holds both TemplateFlow files, in
-    place of the built-in copy."""
-    global TEMPLATE_DIR, TEMPLATE, TEMPLATE_MASK, TEMPLATE_SOURCE
-    given = input_dir / "template"
-    if (given / TEMPLATE_NAME).is_file() and (given / TEMPLATE_MASK_NAME).is_file():
-        TEMPLATE_DIR, TEMPLATE, TEMPLATE_MASK = given, given / TEMPLATE_NAME, given / TEMPLATE_MASK_NAME
-        TEMPLATE_SOURCE = "the template input (INPUT_DIR/template)"
-    elif given.is_dir():
-        log.warning("INPUT_DIR/template doesn't hold %s and %s; using the built-in template",
-                    TEMPLATE_NAME, TEMPLATE_MASK_NAME)
+@dataclass(frozen=True)
+class Template:
+    """The template a run registers to: the brain-extracted T1w, its brain
+    mask, and where they came from."""
+    image: Path
+    mask: Path
+    source: str
+
+    def sha256(self) -> dict:
+        return {"file": sha256_of(self.image), "mask": sha256_of(self.mask)}
+
+
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def resolve_template(input_dir: Path) -> Template:
+    """The template input (INPUT_DIR/template/, from Pennsieve's reference
+    catalog or put there by hand), else the copy built into the image. A
+    template input that is there must hold both files: a run given one never
+    falls back silently. Raises ValueError saying what's missing."""
+    given = input_dir / TEMPLATE_INPUT
+    if given.exists():
+        tpl = Template(given / TEMPLATE_NAME, given / TEMPLATE_MASK_NAME, f"the template input (INPUT_DIR/{TEMPLATE_INPUT})")
+    else:
+        tpl = Template(BUILT_IN_TEMPLATES / TEMPLATE_NAME, BUILT_IN_TEMPLATES / TEMPLATE_MASK_NAME, "built into the image")
+    for f in (tpl.image, tpl.mask):
+        try:
+            readable = f.is_file() and os.access(f, os.R_OK)
+        except OSError:
+            readable = False
+        if not readable:
+            raise ValueError(f"template file {f} ({tpl.source}) is missing or not readable")
+    return tpl
 TRANSFORM_TYPES = ("s", "a", "r", "b")
 DEFORMABLE = ("s", "b")
 DEFAULTS = {"TRANSFORM_TYPE": "s", "THREADS": "4"}
@@ -114,10 +141,10 @@ def label_output_type(labels: Path) -> str:
     return "int"
 
 
-def registration_dice(warped: Path) -> tuple[float, dict]:
+def registration_dice(warped: Path, mask: Path) -> tuple[float, dict]:
     """Dice between the warped image's foreground (> 0; the input is skull-stripped) and the template brain mask."""
     w = nib.load(str(warped))
-    m = nib.load(str(TEMPLATE_MASK))
+    m = nib.load(str(mask))
     if w.shape != m.shape:
         raise RuntimeError(f"warped image shape {w.shape} differs from the template's {m.shape}")
     fg = np.asarray(w.dataobj) > 0
@@ -126,13 +153,13 @@ def registration_dice(warped: Path) -> tuple[float, dict]:
 
 
 def process_subject(sub: str, image: Path, labels: Path | None, out_warped: Path, out_tf: Path,
-                    params: dict, input_dir: Path, output_dir: Path) -> dict:
+                    params: dict, input_dir: Path, output_dir: Path, tpl: Template, tpl_sha256: dict) -> dict:
     ttype = params["TRANSFORM_TYPE"]
     t0 = time.monotonic()
     tmp = Path(tempfile.mkdtemp(prefix=f"{sub}_", dir="/tmp"))
     try:
         prefix = tmp / f"{sub}_"
-        cmd = [TOOL, "-d", "3", "-f", str(TEMPLATE), "-m", str(image), "-o", str(prefix),
+        cmd = [TOOL, "-d", "3", "-f", str(tpl.image), "-m", str(image), "-o", str(prefix),
                "-t", ttype, "-n", str(params["THREADS"]), "-p", "f"]
         run(cmd, sub)
 
@@ -160,7 +187,7 @@ def process_subject(sub: str, image: Path, labels: Path | None, out_warped: Path
             if ttype in DEFORMABLE:
                 transforms += ["-t", str(produced["1Warp.nii.gz"])]
             transforms += ["-t", str(produced["0GenericAffine.mat"])]
-            apply_cmd = ["antsApplyTransforms", "-d", "3", "-i", str(labels), "-r", str(TEMPLATE),
+            apply_cmd = ["antsApplyTransforms", "-d", "3", "-i", str(labels), "-r", str(tpl.image),
                          *transforms, "-n", "GenericLabel", "-u", label_output_type(labels),
                          "-o", str(warped_labels)]
             run(apply_cmd, sub)
@@ -170,15 +197,16 @@ def process_subject(sub: str, image: Path, labels: Path | None, out_warped: Path
             inputs.append(str(labels.relative_to(input_dir)))
             outputs.append(str(warped_labels.relative_to(output_dir)))
 
-        score, counts = registration_dice(warped)
+        score, counts = registration_dice(warped, tpl.mask)
         seconds = round(time.monotonic() - t0, 1)
         report = {
             "subject": sub,
             "transformType": ttype,
             "dice": round(score, 4),
             **counts,
-            "template": TEMPLATE.name,
+            "template": tpl.image.name,
             "templateSpace": SPACE,
+            "templateSha256": tpl_sha256["file"],
             "command": cmd,
             "seconds": seconds,
         }
@@ -210,24 +238,22 @@ def main() -> int:
     except ValueError as exc:
         log.error("bad parameter: %s", exc)
         return 2
-    use_template_input(input_dir)
-    for f in (TEMPLATE, TEMPLATE_MASK):
-        try:
-            readable = f.is_file() and os.access(f, os.R_OK)
-        except OSError:
-            readable = False
-        if not readable:
-            log.error("template file %s is missing or not readable", f)
-            return 2
+    try:
+        tpl = resolve_template(input_dir)
+    except ValueError as exc:
+        log.error("%s", exc)
+        return 2
+    tpl_sha256 = tpl.sha256()
     os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(params["THREADS"])
-    log.info("%s %s, ANTs %s, parameters %s, template %s (from %s)", APP, app_version(), tool_version(), params,
-             TEMPLATE, TEMPLATE_SOURCE)
+    log.info("%s %s, ANTs %s, parameters %s, template %s (%s, sha256 %s)", APP, app_version(), tool_version(), params,
+             tpl.image, tpl.source, tpl_sha256["file"])
 
     out_warped = bn.output_dir_for(output_dir, OUTPUTS, "warped")
     out_tf = bn.output_dir_for(output_dir, OUTPUTS, "transforms")
 
-    images = bn.by_subject(bn.find_input_files(input_dir, "image", ["T1w"]))
-    labels = bn.by_subject(bn.find_input_files(input_dir, "labels", ["dseg"]))
+    # The template's own T1w is never an image to register (a flat INPUT_DIR).
+    images = bn.by_subject(bn.find_input_files(input_dir, "image", ["T1w"], exclude=[TEMPLATE_INPUT]))
+    labels = bn.by_subject(bn.find_input_files(input_dir, "labels", ["dseg"], exclude=[TEMPLATE_INPUT]))
     if not images:
         found = sorted(str(p.relative_to(input_dir)) for p in input_dir.rglob("*") if p.is_file())
         log.error("no T1w image (*_T1w.nii[.gz]) found under %s; files present: %s",
@@ -245,7 +271,7 @@ def main() -> int:
         if lab is None and labels:
             log.warning("[%s] no label map for this subject", sub)
         try:
-            subjects.append(process_subject(sub, image, lab, out_warped, out_tf, params, input_dir, output_dir))
+            subjects.append(process_subject(sub, image, lab, out_warped, out_tf, params, input_dir, output_dir, tpl, tpl_sha256))
         except (subprocess.CalledProcessError, RuntimeError, OSError, ValueError) as exc:
             log.error("[%s] failed: %s", sub, exc)
             failures.append({"subject": sub, "inputs": [str(image.relative_to(input_dir))], "error": str(exc)})
@@ -255,8 +281,9 @@ def main() -> int:
         "appVersion": app_version(),
         "tool": TOOL,
         "toolVersion": tool_version(),
-        "template": {"space": SPACE, "resolution": "01", "file": TEMPLATE.name, "mask": TEMPLATE_MASK.name,
-                     "source": TEMPLATE_SOURCE},
+        "template": {"space": SPACE, "resolution": "01", "file": tpl.image.name, "mask": tpl.mask.name,
+                     "source": tpl.source, "sha256": tpl_sha256,
+                     "origin": "https://templateflow.s3.amazonaws.com/tpl-MNI152NLin2009cAsym/"},
         "startedAt": started.isoformat(),
         "finishedAt": datetime.now(timezone.utc).isoformat(),
         "parameters": params,
