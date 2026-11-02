@@ -45,19 +45,25 @@ def derived_name(source: str | os.PathLike, suffix: str, ext: str = ".nii.gz", *
     return "_".join(parts) + ext
 
 
-def find_input_files(input_dir: str | os.PathLike, name: str, suffixes: Iterable[str], exts: Iterable[str] = NIFTI_EXTS) -> list[Path]:
+def find_input_files(input_dir: str | os.PathLike, name: str, suffixes: Iterable[str], exts: Iterable[str] = NIFTI_EXTS,
+                     exclude: Iterable[str] = ()) -> list[Path]:
     """Files for input `name`: INPUT_DIR/<name>/ if it exists (recursively), else all of INPUT_DIR
-    recursively, keeping files whose BIDS suffix is in `suffixes` (case-insensitive) and whose
-    extension is in `exts`. Sorted, de-duplicated by file name, symlinks allowed."""
+    recursively except the folders named in `exclude` (other inputs', such as a template's),
+    keeping files whose BIDS suffix is in `suffixes` (case-insensitive) and whose extension is
+    in `exts`. Sorted, de-duplicated by file name, symlinks allowed."""
     root = Path(input_dir)
     base = root / name
+    skipped: tuple[Path, ...] = ()
     if not base.is_dir():
         base = root
+        skipped = tuple(root / x for x in exclude)
     wanted = {s.lower() for s in suffixes}
     exts = tuple(exts)
     seen: dict[str, Path] = {}
     for p in sorted(base.rglob("*")):
         if not p.is_file() or not p.name.endswith(exts):
+            continue
+        if any(s in p.parents for s in skipped):
             continue
         if wanted and suffix_of(p).lower() not in wanted:
             continue
