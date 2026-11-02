@@ -38,9 +38,27 @@ APP = "processor-ants-mni"
 TOOL = "antsRegistrationSyNQuick.sh"
 OUTPUTS = ["warped", "transforms"]
 SPACE = "MNI152NLin2009cAsym"
+TEMPLATE_NAME = f"tpl-{SPACE}_res-01_desc-brain_T1w.nii.gz"
+TEMPLATE_MASK_NAME = f"tpl-{SPACE}_res-01_desc-brain_mask.nii.gz"
+# The copy baked into the image; a run's template input replaces it.
 TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "/opt/templates"))
-TEMPLATE = TEMPLATE_DIR / f"tpl-{SPACE}_res-01_desc-brain_T1w.nii.gz"
-TEMPLATE_MASK = TEMPLATE_DIR / f"tpl-{SPACE}_res-01_desc-brain_mask.nii.gz"
+TEMPLATE = TEMPLATE_DIR / TEMPLATE_NAME
+TEMPLATE_MASK = TEMPLATE_DIR / TEMPLATE_MASK_NAME
+TEMPLATE_SOURCE = "https://templateflow.s3.amazonaws.com/tpl-MNI152NLin2009cAsym/ (built into the image)"
+
+
+def use_template_input(input_dir: Path) -> None:
+    """Use the template input (INPUT_DIR/template/, from Pennsieve's reference
+    catalog or put there by hand) when it holds both TemplateFlow files, in
+    place of the built-in copy."""
+    global TEMPLATE_DIR, TEMPLATE, TEMPLATE_MASK, TEMPLATE_SOURCE
+    given = input_dir / "template"
+    if (given / TEMPLATE_NAME).is_file() and (given / TEMPLATE_MASK_NAME).is_file():
+        TEMPLATE_DIR, TEMPLATE, TEMPLATE_MASK = given, given / TEMPLATE_NAME, given / TEMPLATE_MASK_NAME
+        TEMPLATE_SOURCE = "the template input (INPUT_DIR/template)"
+    elif given.is_dir():
+        log.warning("INPUT_DIR/template doesn't hold %s and %s; using the built-in template",
+                    TEMPLATE_NAME, TEMPLATE_MASK_NAME)
 TRANSFORM_TYPES = ("s", "a", "r", "b")
 DEFORMABLE = ("s", "b")
 DEFAULTS = {"TRANSFORM_TYPE": "s", "THREADS": "4"}
@@ -192,16 +210,18 @@ def main() -> int:
     except ValueError as exc:
         log.error("bad parameter: %s", exc)
         return 2
+    use_template_input(input_dir)
     for f in (TEMPLATE, TEMPLATE_MASK):
         try:
             readable = f.is_file() and os.access(f, os.R_OK)
         except OSError:
             readable = False
         if not readable:
-            log.error("template file %s is missing from the image or not readable", f)
+            log.error("template file %s is missing or not readable", f)
             return 2
     os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(params["THREADS"])
-    log.info("%s %s, ANTs %s, parameters %s, template %s", APP, app_version(), tool_version(), params, TEMPLATE)
+    log.info("%s %s, ANTs %s, parameters %s, template %s (from %s)", APP, app_version(), tool_version(), params,
+             TEMPLATE, TEMPLATE_SOURCE)
 
     out_warped = bn.output_dir_for(output_dir, OUTPUTS, "warped")
     out_tf = bn.output_dir_for(output_dir, OUTPUTS, "transforms")
@@ -236,7 +256,7 @@ def main() -> int:
         "tool": TOOL,
         "toolVersion": tool_version(),
         "template": {"space": SPACE, "resolution": "01", "file": TEMPLATE.name, "mask": TEMPLATE_MASK.name,
-                     "source": "https://templateflow.s3.amazonaws.com/tpl-MNI152NLin2009cAsym/"},
+                     "source": TEMPLATE_SOURCE},
         "startedAt": started.isoformat(),
         "finishedAt": datetime.now(timezone.utc).isoformat(),
         "parameters": params,

@@ -5,7 +5,7 @@ from [TemplateFlow](https://www.templateflow.org/)) with
 [ANTs](https://github.com/ANTsX/ANTs) 2.6.5 `antsRegistrationSyNQuick.sh`, and carries an
 optional label map along into template space. Step 4 of the Clinical Brain MRI workflow: it takes
 the skull-stripped, bias-corrected T1w from the N4 step. The template and its brain mask are baked
-into the image under `/opt/templates/`, so the container needs no network.
+into the image under `/opt/templates/`, so the container needs no network. On Pennsieve the `template` input brings the same files from Pennsieve's reference catalog (an official, versioned copy recorded on each run); elsewhere, put `tpl-MNI152NLin2009cAsym_res-01_desc-brain_T1w.nii.gz` and `..._desc-brain_mask.nii.gz` in `INPUT_DIR/template/`, or leave it out to use the built-in copy.
 
 ## Ports
 
